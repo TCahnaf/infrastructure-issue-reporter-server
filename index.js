@@ -3,7 +3,7 @@ const cors = require('cors')
 const app = express()
 const port = process.env.PORT || 3000
 require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 
 
@@ -31,20 +31,116 @@ async function run() {
 
     //issue related api's
 
-    app.get('issues', async (req, res) => {
-    })
+    app.get('/issues', async (req, res) => {
+        const limit = parseInt(req.query.limit);
+        const query = {};
+        const category = req.query.category;
+        const status = req.query.status;
+        const email = req.query.email;
+          if (category) {
+            query.category = category
+        }
+          if (status) {
+            query.status = status
+        }
 
-    app.post('issues', async(req, res) => {
+        if(email){
+          query.userEmail = email;
+        }
 
-        const issue = req.body;
-        const result = await issuesCollection.insertOne(issue);
+           let cursor = issuesCollection.find(query)
+             if(limit){
+             cursor = cursor.limit(limit)
+          
+        }
+
+        const result = await cursor.toArray();
         res.send(result)
 
+        
+
+
+
+
+
+
     })
+
+    app.post('/issues', async(req, res) => {
+
+        const issue = req.body;
+        issue.priority = "normal";
+        issue.status = "pending"
+        const result = await issuesCollection.insertOne(issue);
+
+        await usersCollection.updateOne(
+       {email: issue.userEmail},
+       {$inc: {issuesCount:1}}
+
+
+
+
+
+
+        )
+
+        res.send(result)
+
+      
+
+    })
+
+    app.patch('/issue/:id', async(req,res)=> {
+
+      const id = req.params.id
+      const updatedInfo = req.body;
+      const query = {_id: new ObjectId(id)}
+
+      const update = {
+
+        $set: {
+          title: updatedInfo.title,
+          category: updatedInfo.category,
+          location: updatedInfo.location,
+          description: updatedInfo.description,
+          photo: updatedInfo.photo
+        }
+
+
+      }
+
+      const result = await issuesCollection.updateOne(query, update)
+
+      res.send(result)
+
+    })
+
+
+    app.delete('/issues/:id', async (req,res) => {
+      const id = req.params.id
+      const query = {_id: new ObjectId(id)}
+      const result = await issuesCollection.deleteOne(query)
+      res.send(result)
+    })
+
+    
+
+
 
 
     // user related api's
-     app.get('users', async (req, res) => {
+     app.get('/users', async (req, res) => {
+      const query = {};
+      const email = req.query.email
+      if (email){
+        query.email = email;
+      }
+
+      const result = await usersCollection.findOne(query);
+
+      res.send(result)
+
+
     })
 
     app.post('/users', async (req, res) => {
@@ -61,6 +157,31 @@ async function run() {
         const result = await usersCollection.insertOne(user);
         res.send(result)
     })
+
+
+    app.patch('/users/:id', async (req, res) => {
+        const userInfo = req.body;
+        const id = req.params.id
+        const query = {_id: new ObjectId(id)}
+
+        const update = {
+
+        $set: {
+
+          photo: userInfo.photo,
+          name: userInfo.name
+
+
+        }
+
+
+      }
+
+      const result = await usersCollection.updateOne(query, update)
+
+     
+        res.send(result)
+    } )
 
 
 
