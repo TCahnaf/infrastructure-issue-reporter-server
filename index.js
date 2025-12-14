@@ -5,6 +5,8 @@ const port = process.env.PORT || 3000
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
+
 
 
 app.use(express.json());
@@ -27,6 +29,7 @@ async function run() {
     const db = client.db('issue_report_db');
     const usersCollection = db.collection('users');
     const issuesCollection = db.collection('issues');
+    const paymentsCollection = db.collection('payments')
 
 
     //issue related api's
@@ -187,7 +190,88 @@ async function run() {
 
     
 
+//payment API's
 
+app.post('/create-checkout-session', async (req, res) => {
+
+  const paymentInfo = req.body;
+
+        const amount = parseInt(paymentInfo.cost) * 100;
+    
+
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'USD',
+                            unit_amount: amount,
+                            product_data: {
+                                name: 'premium-subscription'
+                            }
+                        },
+                        quantity: 1,
+                    },
+                ],
+                customer_email: paymentInfo.subscriberEmail,
+                mode: 'payment',
+                metadata: {
+                    subscriberEmail: paymentInfo.subscriberEmail
+                },
+                success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+            })
+
+            console.log(session)
+            res.send({ url: session.url })
+
+  
+
+
+
+   
+});
+
+ app.patch('/payment-success', async (req, res) => {
+            const sessionId = req.query.session_id;
+
+            const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+            console.log('session retrieve', session)
+           
+
+            if (session.payment_status === 'paid') {
+            const query = { email:session.metadata.subscriberEmail};
+            
+                 const update = {
+                    $set: {
+                        subscription: 'premium',
+                      
+                    }
+                }
+
+                const result = await usersCollection.updateOne(query, update);
+
+                const payment = {
+                    amount: session.amount_total / 100,
+                    currency: session.currency,
+                    customerEmail: session.customer_email,
+                    transactionId: session.payment_intent,
+                    paymentStatus: session.payment_status,
+                    paidAt: new Date()
+                }
+
+                    const resultPayment = await paymentsCollection.insertOne(payment)
+
+                     
+                
+
+                res.send(result)
+
+             }
+
+             res.send({ success: false })
+        
+    })
 
 
 
