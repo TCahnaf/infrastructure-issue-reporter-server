@@ -8,6 +8,15 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./nyc-infra-report-firebase-adminsdk-fbsvc-cd285371df.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
 
 app.use(express.json());
 app.use(cors());
@@ -30,6 +39,8 @@ async function run() {
     const usersCollection = db.collection('users');
     const issuesCollection = db.collection('issues');
     const paymentsCollection = db.collection('payments')
+    const staffsCollection = db.collection('staff');
+    const logsCollections = db.collection('logs');
 
 
     //issue related api's
@@ -74,22 +85,46 @@ async function run() {
         const issue = req.body;
         issue.priority = "normal";
         issue.status = "pending"
+        issue.upvoteCount = 0;
         const result = await issuesCollection.insertOne(issue);
 
         await usersCollection.updateOne(
        {email: issue.userEmail},
        {$inc: {issuesCount:1}}
 
+        )
 
+        
 
+        
 
+        await logsCollections.insertOne(
+          {
+            issueId: result.insertedId,
+            event: {
+              type: "ISSUE_CREATED",
+              createdAT: new Date ()
 
-
+            }
+          }
         )
 
         res.send(result)
 
       
+
+    })
+
+
+    //increment upvotecount
+    app.post('/issues/:id/upvote', async(req,res) => {
+
+      const id = req.params.id
+      const query = {_id: new ObjectId(id)}
+
+      const result = await issuesCollection.updateOne(query, {$inc: {upvoteCount:1}})
+
+      res.send(result)
 
     })
 
@@ -187,6 +222,101 @@ async function run() {
     } )
 
 
+    //staff related API's
+    app.get('/staffs', async(req,res) => {
+
+      const query = {}
+
+      const cursor = staffsCollection.find(query)
+      const result = await cursor.toArray();
+
+      res.send(result)
+    })
+
+
+     app.post('/staffs', async(req,res) => {
+
+      const staffInfo = req.body;
+      const email = staffInfo.email
+
+      const staffExists = await staffsCollection.findOne({email})
+      if(staffExists) {
+            return res.send({message: 'staff already exists'})
+        }
+
+      const result = await staffsCollection.insertOne(staffInfo)
+
+      res.send(result)
+    })
+
+
+     app.patch('/staffs/:id', async (req, res) => {
+        const userInfo = req.body;
+        const id = req.params.id
+        const query = {_id: new ObjectId(id)}
+
+        const update = {
+
+        $set: {
+
+          photo: userInfo.photo,
+          name: userInfo.name
+
+
+        }
+
+
+      }
+
+      const result = await staffsCollection.updateOne(query, update)
+
+     
+        res.send(result)
+    } )
+
+     app.delete('/staffs/:id', async (req,res) => {
+      const id = req.params.id
+      const query = {_id: new ObjectId(id)}
+      const result = await staffsCollection.deleteOne(query)
+      res.send(result)
+    })
+
+
+    app.post('/create-staff', async(req, res) => {
+      const staffInfo = req.body
+       const staffExists = await staffsCollection.findOne({email:staffInfo.email})
+      if(staffExists) {
+            return res.send({message: 'staff already exists'})
+        }
+
+
+      
+      const staffRecord = await admin.auth().createUser(
+        {
+          email:staffInfo.email,
+          password: staffInfo.password,
+          displayName: staffInfo.name,
+          photoURL: staffInfo.photo
+        }
+
+      );
+
+      const dbRecord = {
+        uid: staffRecord.uid,
+        email:staffInfo.email,
+        name:staffInfo.name,
+        photo:staffInfo.photo,
+        role: 'staff'
+      }
+
+     
+      const result = await staffsCollection.insertOne(dbRecord)
+
+      res.send(result);
+
+    })
+
+
 
     
 
@@ -272,6 +402,9 @@ app.post('/create-checkout-session', async (req, res) => {
              res.send({ success: false })
         
     })
+
+
+    
 
 
 
