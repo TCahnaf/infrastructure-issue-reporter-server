@@ -116,15 +116,25 @@ async function run() {
     })
 
 
-    //increment upvotecount
-    app.post('/issues/:id/upvote', async(req,res) => {
+    //increment/decrement upvotecount
+    app.patch('/issues/:id/vote', async(req,res) => {
 
-      const id = req.params.id
+     const id = req.params.id
       const query = {_id: new ObjectId(id)}
 
-      const result = await issuesCollection.updateOne(query, {$inc: {upvoteCount:1}})
 
-      res.send(result)
+      if((req.body.vote) === 'like') {
+          const result = await issuesCollection.updateOne(query, {$inc: {upvoteCount:1}})
+          res.send(result)
+
+      }
+
+      else {
+
+         const result = await issuesCollection.updateOne(query, {$inc: {upvoteCount:-1}})
+         res.send(result)
+
+      }
 
     })
 
@@ -157,7 +167,17 @@ async function run() {
     app.delete('/issues/:id', async (req,res) => {
       const id = req.params.id
       const query = {_id: new ObjectId(id)}
+
+      const issueRecord = await issuesCollection.findOne(query)
+
+      await usersCollection.updateOne({email: issueRecord.userEmail},  { $inc: { issuesCount: -1 } } )
+
+
       const result = await issuesCollection.deleteOne(query)
+
+
+
+
       res.send(result)
     })
 
@@ -167,8 +187,8 @@ async function run() {
 
 
     // user related api's
-     app.get('/users', async (req, res) => {
-      const query = {};
+     app.get('/user', async (req, res) => {
+      const query = {}
       const email = req.query.email
       if (email){
         query.email = email;
@@ -180,6 +200,21 @@ async function run() {
 
 
     })
+
+    app.get('/users', async (req, res) => {
+     const cursor = usersCollection.find({})
+
+      const result =  await cursor.toArray();
+
+      res.send(result)
+
+
+    })
+
+
+
+
+
 
     app.post('/users', async (req, res) => {
         const user = req.body;
@@ -220,6 +255,22 @@ async function run() {
      
         res.send(result)
     } )
+
+
+    app.patch('/user/:id/status', async(req,res) => {
+      const id = req.params.id;
+      const requested_status = req.body.status;
+      const query = {_id: new ObjectId(id) }
+      const update = {
+        $set: {
+          status: requested_status
+        }
+      }
+
+      const result = await usersCollection.updateOne(query, update)
+
+      res.send(result)
+    })
 
 
     //staff related API's
