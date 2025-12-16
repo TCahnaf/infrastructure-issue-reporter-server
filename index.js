@@ -86,6 +86,8 @@ async function run() {
         issue.priority = "normal";
         issue.status = "pending"
         issue.upvoteCount = 0;
+        issue.assignedStaffName = "";
+        issue.assignedStaffEmail = "";
         const result = await issuesCollection.insertOne(issue);
 
         await usersCollection.updateOne(
@@ -158,8 +160,66 @@ async function run() {
       }
 
       const result = await issuesCollection.updateOne(query, update)
+      
+       await logsCollections.insertOne(
+          {
+            issueId: result.insertedId,
+            event: {
+              type: "ISSUE_CREATED",
+              createdAT: new Date ()
+
+            }
+          }
+        )
+
 
       res.send(result)
+
+    })
+
+
+    //update issue record with staff info
+
+    app.patch('/issues/:id/assign-staff', async(req,res) => {
+
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)};
+      const updateInfo = req.body;
+
+      const update = {
+        $set: {
+
+          assignedStaffName: updateInfo.name,
+          assignedStaffEmail: updateInfo.email, 
+        }
+
+  
+      }
+
+         const result = await issuesCollection.updateOne(query,update)
+
+          await logsCollections.insertOne(
+          {
+            issueId: result.insertedId,
+            event: {
+              type: "STAFF_ASSIGNED",
+              staffName: updateInfo.name ,
+              createdAT: new Date ()
+
+            }
+          }
+
+        
+        )
+
+          res.send(result)
+
+
+
+
+
+
+
 
     })
 
@@ -452,6 +512,18 @@ app.post('/create-checkout-session', async (req, res) => {
 
              res.send({ success: false })
         
+    })
+
+    app.get('/payments', async(req,res)=>{
+
+      const query = {}
+      //add by email filter here
+      const cursor = paymentsCollection.find();
+      const result = await cursor.find(query)
+
+      res.send(result)
+
+
     })
 
 
