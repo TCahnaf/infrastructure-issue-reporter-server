@@ -21,6 +21,33 @@ admin.initializeApp({
 app.use(express.json());
 app.use(cors());
 
+const verifyFBToken = async (req, res, next) => {
+    const token = req.headers.authorization;
+
+    if (!token) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
+
+    try {
+        const idToken = token.split(' ')[1];
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        console.log('decoded in the token', decoded);
+        req.decoded_email = decoded.email;
+        next();
+    }
+    catch (err) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
+
+
+}
+
+
+
+
+
+
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.vdtwnfb.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -42,10 +69,22 @@ async function run() {
     const staffsCollection = db.collection('staff');
     const logsCollections = db.collection('logs');
 
+const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await usersCollection.findOne(query);
+
+            if (!user || user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+
 
     //issue related api's
 
-    app.get('/issues', async (req, res) => {
+    app.get('/issues', verifyFBToken, async (req, res) => {
         const limit = parseInt(req.query.limit);
         const query = {};
         const category = req.query.category;
@@ -59,6 +98,9 @@ async function run() {
         }
 
         if(email){
+          if (email !== req.decoded_email) {
+            return res.status(403).send({ message: 'forbidden access' });
+        }
           query.userEmail = email;
         }
 
@@ -223,6 +265,22 @@ async function run() {
 
     })
 
+    app.patch('/issue/:id/reject', async(req,res) => {
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id) }
+      const updateInfo = req.body.status
+      const update = {
+        $set:{
+          status: updateInfo
+
+        }
+      }
+       const result = await issuesCollection.updateOne(query,update)
+
+       res.send(result)
+
+    })
+
 
     app.delete('/issues/:id', async (req,res) => {
       const id = req.params.id
@@ -246,8 +304,8 @@ async function run() {
 
 
 
-    // user related api's
-     app.get('/user', async (req, res) => {
+    // user collection related api's
+     app.get('/user', verifyFBToken, async (req, res) => {
       const query = {}
       const email = req.query.email
       if (email){
@@ -261,7 +319,9 @@ async function run() {
 
     })
 
-    app.get('/users', async (req, res) => {
+
+    //admin operation
+    app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
      const cursor = usersCollection.find({})
 
       const result =  await cursor.toArray();
@@ -292,7 +352,7 @@ async function run() {
     })
 
 
-    app.patch('/users/:id', async (req, res) => {
+    app.patch('/users/:id', verifyFBToken, async (req, res) => {
         const userInfo = req.body;
         const id = req.params.id
         const query = {_id: new ObjectId(id)}
@@ -317,7 +377,7 @@ async function run() {
     } )
 
 
-    app.patch('/user/:id/status', async(req,res) => {
+    app.patch('/user/:id/status',verifyFBToken, verifyAdmin, async(req,res) => {
       const id = req.params.id;
       const requested_status = req.body.status;
       const query = {_id: new ObjectId(id) }
@@ -333,8 +393,11 @@ async function run() {
     })
 
 
+    
+
+
     //staff related API's
-    app.get('/staffs', async(req,res) => {
+    app.get('/staffs', verifyFBToken, verifyAdmin, async(req,res) => {
 
       const query = {}
 
@@ -345,7 +408,7 @@ async function run() {
     })
 
 
-     app.post('/staffs', async(req,res) => {
+     app.post('/staffs', verifyFBToken, verifyAdmin, async(req,res) => {
 
       const staffInfo = req.body;
       const email = staffInfo.email
@@ -514,12 +577,23 @@ app.post('/create-checkout-session', async (req, res) => {
         
     })
 
-    app.get('/payments', async(req,res)=>{
+    app.get('/payments', verifyFBToken, verifyAdmin, async(req,res)=>{
 
       const query = {}
-      //add by email filter here
-      const cursor = paymentsCollection.find();
-      const result = await cursor.find(query)
+      const sortOrder = req.query.sortBy;
+     
+
+      let sortOption = {};
+      if(sortOrder === "high"){
+        sortOption = { amount: -1}
+      }
+      else if ( sortOrder === "low"){
+        sortOption = {amount:1}
+      }
+      const result = await paymentsCollection
+            .find(query)
+            .sort(sortOption)
+            .toArray();
 
       res.send(result)
 
