@@ -255,10 +255,9 @@ const verifyAdmin = async (req, res, next) => {
 
           await logsCollections.insertOne(
           {
-            issueId: result.insertedId,
+            issueId: new ObjectId(id),
             event: {
-              type: "STAFF_ASSIGNED",
-              staffName: updateInfo.name ,
+              type: `Issue has been assigned to: STAFF:${updateInfo.name}`,
               createdAT: new Date ()
 
             }
@@ -571,7 +570,7 @@ app.post('/create-checkout-session', async (req, res) => {
                             currency: 'USD',
                             unit_amount: amount,
                             product_data: {
-                                name: 'premium-subscription'
+                                name: paymentInfo.productName
                             }
                         },
                         quantity: 1,
@@ -580,7 +579,11 @@ app.post('/create-checkout-session', async (req, res) => {
                 customer_email: paymentInfo.subscriberEmail,
                 mode: 'payment',
                 metadata: {
-                    subscriberEmail: paymentInfo.subscriberEmail
+                    subscriberEmail: paymentInfo.subscriberEmail,
+                    productName: paymentInfo.productName,
+                    issueId: paymentInfo.issueId
+
+
                 },
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
@@ -604,36 +607,54 @@ app.post('/create-checkout-session', async (req, res) => {
             console.log('session retrieve', session)
            
 
-            if (session.payment_status === 'paid') {
-            const query = { email:session.metadata.subscriberEmail};
+                if (session.payment_status === 'paid') {
+                   const userEmail = session.metadata.subscriberEmail;
+                   const productName = session.metadata.productName;
+                   const issueId = session.metadata.issueId
             
-                 const update = {
-                    $set: {
-                        subscription: 'premium',
-                      
-                    }
-                }
-
-                const result = await usersCollection.updateOne(query, update);
-
-                const payment = {
+                    const payment = {
                     amount: session.amount_total / 100,
                     currency: session.currency,
-                    customerEmail: session.customer_email,
+                    customerEmail: userEmail,
+                    productName:productName,
                     transactionId: session.payment_intent,
                     paymentStatus: session.payment_status,
                     paidAt: new Date()
                 }
+                 await paymentsCollection.insertOne(payment)
 
-                    const resultPayment = await paymentsCollection.insertOne(payment)
+                if(productName === 'premium-subscription') {
+                   const query = {email:userEmail}
+                   const updateInfo = {
+                    $set:{
+                      subscription: 'premium'
 
-                     
-                
+                    }
+                   }
+           
+                await usersCollection.updateOne(query, updateInfo);
 
-                res.send(result)
+                }
 
-             }
+                else if (productName === 'boost-fee'){
+                    const query = {_id:new ObjectId(issueId)}
+                    const updateInfo = {
+                      $set:{
+                        priority: 'high'
+                      }
+                    }
 
+                    await issuesCollection.updateOne(query, updateInfo);
+
+                  
+
+
+                }
+                   return res.send({ success: true, message: 'Payment processed successfully' });
+               
+                  }
+
+             
              res.send({ success: false })
         
     })
