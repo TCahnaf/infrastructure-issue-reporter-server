@@ -82,6 +82,19 @@ const verifyAdmin = async (req, res, next) => {
         }
 
 
+ const verifyStaff = async (req, res, next) => {
+            const email = req.decoded_email;
+            const query = { email };
+            const user = await usersCollection.findOne(query);
+
+            if (!user || user.role !== 'staff') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            next();
+        }
+
+
     //issue related api's
 
     app.get('/issues', verifyFBToken, async (req, res) => {
@@ -281,6 +294,50 @@ const verifyAdmin = async (req, res, next) => {
 
     })
 
+    app.patch('/issue/:id/staff-updates', async(req,res) => {
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id) }
+      const updateInfo = req.body.status
+      const update = {
+        $set:{
+          status: updateInfo
+
+        }
+      }
+       const result = await issuesCollection.updateOne(query,update)
+
+       await logsCollections.insertOne(
+          {
+            issueId: new ObjectId(id),
+            event: {
+              type: `ISSUE_NOW_${updateInfo.toUpperCase()}`,
+              createdAT: new Date ()
+
+            }
+          }
+        )
+
+       res.send(result)
+
+    })
+
+    app.get('/issues/assigned',verifyFBToken, verifyStaff, async(req,res) =>{
+
+      const email = req.query.email
+      const query = {}
+      if(email){
+        if (email === req.decoded_email) {
+        query.assignedStaffEmail = email
+      }}
+
+      const result = await issuesCollection.find(query).toArray()
+
+      res.send(result)
+    })
+
+
+
+
 
     app.delete('/issues/:id', async (req,res) => {
       const id = req.params.id
@@ -399,13 +456,17 @@ const verifyAdmin = async (req, res, next) => {
     //staff related API's
     app.get('/staffs', verifyFBToken, verifyAdmin, async(req,res) => {
 
-      const query = {}
+      const query = {role:'staff'}
 
-      const cursor = staffsCollection.find(query)
+      const cursor = usersCollection.find(query)
       const result = await cursor.toArray();
 
       res.send(result)
     })
+
+
+    
+
 
 
      app.post('/staffs', verifyFBToken, verifyAdmin, async(req,res) => {
@@ -413,12 +474,12 @@ const verifyAdmin = async (req, res, next) => {
       const staffInfo = req.body;
       const email = staffInfo.email
 
-      const staffExists = await staffsCollection.findOne({email})
+      const staffExists = await usersCollection.findOne({email})
       if(staffExists) {
             return res.send({message: 'staff already exists'})
         }
 
-      const result = await staffsCollection.insertOne(staffInfo)
+      const result = await usersCollection.insertOne(staffInfo)
 
       res.send(result)
     })
@@ -442,7 +503,7 @@ const verifyAdmin = async (req, res, next) => {
 
       }
 
-      const result = await staffsCollection.updateOne(query, update)
+      const result = await usersCollection.updateOne(query, update)
 
      
         res.send(result)
@@ -451,14 +512,14 @@ const verifyAdmin = async (req, res, next) => {
      app.delete('/staffs/:id', async (req,res) => {
       const id = req.params.id
       const query = {_id: new ObjectId(id)}
-      const result = await staffsCollection.deleteOne(query)
+      const result = await usersCollection.deleteOne(query)
       res.send(result)
     })
 
 
     app.post('/create-staff', async(req, res) => {
       const staffInfo = req.body
-       const staffExists = await staffsCollection.findOne({email:staffInfo.email})
+       const staffExists = await usersCollection.findOne({email:staffInfo.email})
       if(staffExists) {
             return res.send({message: 'staff already exists'})
         }
@@ -484,7 +545,7 @@ const verifyAdmin = async (req, res, next) => {
       }
 
      
-      const result = await staffsCollection.insertOne(dbRecord)
+      const result = await usersCollection.insertOne(dbRecord)
 
       res.send(result);
 
