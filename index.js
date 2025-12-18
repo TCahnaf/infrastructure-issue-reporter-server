@@ -126,7 +126,7 @@ const verifyAdmin = async (req, res, next) => {
           query.userEmail = email;
         }
 
-           let cursor = issuesCollection.find(query)
+           let cursor = issuesCollection.find(query).sort({priority:1})
              if(limit){
              cursor = cursor.limit(limit)
           
@@ -161,6 +161,7 @@ const verifyAdmin = async (req, res, next) => {
         issue.upvoteCount = 0;
         issue.assignedStaffName = "";
         issue.assignedStaffEmail = "";
+        issue.likedBy = [];
         const result = await issuesCollection.insertOne(issue);
 
         await usersCollection.updateOne(
@@ -191,25 +192,28 @@ const verifyAdmin = async (req, res, next) => {
     })
 
 
-    //increment/decrement upvotecount
-    app.patch('/issues/:id/vote', async(req,res) => {
+    // upvotecount
+    app.patch('/issues/:id/vote', verifyFBToken, async(req,res) => {
 
      const id = req.params.id
-      const query = {_id: new ObjectId(id)}
+     const userEmail = req.body.email
+     const query = {_id: new ObjectId(id)}
+    
+
+     const updateCount = {
 
 
-      if((req.body.vote) === 'like') {
-          const result = await issuesCollection.updateOne(query, {$inc: {upvoteCount:1}})
-          res.send(result)
+      
+        $addToSet: {likedBy: userEmail},
+        $inc:{upvoteCount:1}
+      
+     }
 
-      }
+     const result = await issuesCollection.updateOne(query, updateCount)
+     res.send(result)
 
-      else {
 
-         const result = await issuesCollection.updateOne(query, {$inc: {upvoteCount:-1}})
-         res.send(result)
-
-      }
+     
 
     })
 
@@ -390,11 +394,11 @@ const verifyAdmin = async (req, res, next) => {
 
     //api's that fetch data from the log collection
 
-    app.get('/issue-details/:id', async(req,res)=>{
+    app.get('/issue-log/:id', async(req,res)=>{
 
       const id = req.params.id
-      const query = {_id: new ObjectId(id)};
-      const result = await logsCollections.find(query).toArray();
+      const query = {issueId: new ObjectId(id)};
+      const result = await logsCollections.find(query).sort({"event.createdAT":-1}).toArray();
 
       res.send(result)
 
