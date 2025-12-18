@@ -31,7 +31,6 @@ const verifyFBToken = async (req, res, next) => {
     try {
         const idToken = token.split(' ')[1];
         const decoded = await admin.auth().verifyIdToken(idToken);
-        console.log('decoded in the token', decoded);
         req.decoded_email = decoded.email;
         next();
     }
@@ -97,12 +96,14 @@ const verifyAdmin = async (req, res, next) => {
 
     //issue related api's
 
-    app.get('/issues', verifyFBToken, async (req, res) => {
+    app.get('/issues',  async (req, res) => {
         const limit = parseInt(req.query.limit);
         const query = {};
         const category = req.query.category;
         const status = req.query.status;
         const email = req.query.email;
+        const search = req.query.search
+
           if (category) {
             query.category = category
         }
@@ -110,10 +111,18 @@ const verifyAdmin = async (req, res, next) => {
             query.status = status
         }
 
-        if(email){
-          if (email !== req.decoded_email) {
-            return res.status(403).send({ message: 'forbidden access' });
+        if(search){
+          query.title = {
+            $regex: search,
+            $options: 'i'
+          }
         }
+
+        if(email){
+          
+        //   if (email !== req.decoded_email) {
+        //     return res.status(403).send({ message: 'forbidden access' });
+        // }
           query.userEmail = email;
         }
 
@@ -125,15 +134,24 @@ const verifyAdmin = async (req, res, next) => {
 
         const result = await cursor.toArray();
         res.send(result)
-
-        
-
-
-
-
-
-
     })
+
+
+    app.get('/issue/:id', verifyFBToken, async (req, res) => {
+        const id = req.params.id
+        const query = {_id: new ObjectId(id)};
+        const result = await issuesCollection.findOne(query);
+        res.send(result)
+  
+    })
+
+
+
+
+
+
+
+
 
     app.post('/issues', async(req, res) => {
 
@@ -288,6 +306,18 @@ const verifyAdmin = async (req, res, next) => {
         }
       }
        const result = await issuesCollection.updateOne(query,update)
+        await logsCollections.insertOne(
+          {
+            issueId: new ObjectId(id),
+            event: {
+              type: `ISSUE_REJECTED_BY_ADMIN`,
+              createdAT: new Date ()
+
+            }
+          }
+        )
+
+
 
        res.send(result)
 
@@ -338,6 +368,8 @@ const verifyAdmin = async (req, res, next) => {
 
 
 
+
+
     app.delete('/issues/:id', async (req,res) => {
       const id = req.params.id
       const query = {_id: new ObjectId(id)}
@@ -355,6 +387,20 @@ const verifyAdmin = async (req, res, next) => {
       res.send(result)
     })
 
+
+    //api's that fetch data from the log collection
+
+    app.get('/issue-details/:id', async(req,res)=>{
+
+      const id = req.params.id
+      const query = {_id: new ObjectId(id)};
+      const result = await logsCollections.find(query).toArray();
+
+      res.send(result)
+
+
+    })
+
     
 
 
@@ -364,7 +410,12 @@ const verifyAdmin = async (req, res, next) => {
      app.get('/user', verifyFBToken, async (req, res) => {
       const query = {}
       const email = req.query.email
+      const decodedEmail = req.decoded_email;
+
       if (email){
+        if (email !== decodedEmail) {
+        return res.status(403).send({ message: 'Forbidden: You cannot access other users data' });
+    }
         query.email = email;
       }
 
@@ -645,6 +696,16 @@ app.post('/create-checkout-session', async (req, res) => {
                     }
 
                     await issuesCollection.updateOne(query, updateInfo);
+                    await logsCollections.insertOne(
+                  {
+                    issueId: new ObjectId(issueId),
+                    event: {
+                      type: `Issue Has Been Boosted`,
+                      createdAT: new Date ()
+
+                    }
+                  }
+        )
 
                   
 
