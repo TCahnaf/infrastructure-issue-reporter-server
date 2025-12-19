@@ -120,9 +120,7 @@ const verifyAdmin = async (req, res, next) => {
 
         if(email){
           
-        //   if (email !== req.decoded_email) {
-        //     return res.status(403).send({ message: 'forbidden access' });
-        // }
+       
           query.userEmail = email;
         }
 
@@ -727,7 +725,9 @@ app.post('/create-checkout-session', async (req, res) => {
     app.get('/payments', verifyFBToken, verifyAdmin, async(req,res)=>{
 
       const query = {}
+      
       const sortOrder = req.query.sortBy;
+      const total = req.query.total
      
 
       let sortOption = {};
@@ -737,6 +737,24 @@ app.post('/create-checkout-session', async (req, res) => {
       else if ( sortOrder === "low"){
         sortOption = {amount:1}
       }
+
+      if(total){
+
+        const stats = await paymentsCollection.aggregate(
+          [
+            {$match: query},
+            {$group : {
+              _id:null,
+              totalAmount: { $sum: "$amount"}
+            }}
+          ]
+        ).toArray();
+        const totalValue = stats[0].totalAmount
+        return res.send({totalAmount: totalValue})
+      }
+
+
+
       const result = await paymentsCollection
             .find(query)
             .sort(sortOption)
@@ -744,12 +762,94 @@ app.post('/create-checkout-session', async (req, res) => {
 
       res.send(result)
 
+    })
+
+    app.get('/user-payments', verifyFBToken,  async(req,res)=>{
+
+
+      const email = req.query.email
+      const decodedEmail = req.decoded_email;
+      if (!email) {
+    return res.status(400).send({ message: "Email query parameter is required" });
+  }
+
+        if (email !== decodedEmail) {
+        return res.status(403).send({ message: 'Forbidden: You cannot access other users data' });
+        
+      }
+
+      const query = {customerEmail:email};
+    
+      const result = await paymentsCollection
+            .find(query)
+            .toArray();
+
+      res.send(result)
+
+    })
+
+
+
+
+
+    // API's for handling stats
+    app.get('/stats', async(req,res) => {
+      const userEmail = req.query.userEmail;
+      const staffEmail = req.query.staffEmail;
+
+      let query = {};
+      if(userEmail) {
+        query.userEmail = userEmail;
+      }
+      else if (staffEmail) {
+        query.assignedStaffEmail = staffEmail
+      }
+
+
+
+
+      const result = await issuesCollection.aggregate(
+        [ 
+          {
+            $match: query
+          },
+
+          {
+            $group: {
+              _id: "$status",
+              count: {$sum: 1}
+            }
+          }
+
+
+        ]
+
+
+      ).toArray();
+
+      res.send(result)
+
+
+
+
 
     })
 
 
     
-
+// 
+app.get('/admin-stats', async (req, res) => {
+    const result = await issuesCollection.aggregate([
+        {
+            $group: {
+                _id: "$status", 
+                count: { $sum: 1 }
+            }
+        }
+    ]).toArray();
+    
+    res.send(result);
+})
 
 
 
