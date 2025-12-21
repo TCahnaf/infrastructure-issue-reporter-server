@@ -97,12 +97,15 @@ const verifyAdmin = async (req, res, next) => {
     //issue related api's
 
     app.get('/issues',  async (req, res) => {
-        const limit = parseInt(req.query.limit);
+    
         const query = {};
         const category = req.query.category;
         const status = req.query.status;
         const email = req.query.email;
         const search = req.query.search
+        const page = parseInt(req.query.page) || 1
+        const size =  parseInt(req.query.size) || 6;
+        const skip = (page-1)*size
 
           if (category) {
             query.category = category
@@ -124,14 +127,12 @@ const verifyAdmin = async (req, res, next) => {
           query.userEmail = email;
         }
 
-           let cursor = issuesCollection.find(query).sort({priority:1})
-             if(limit){
-             cursor = cursor.limit(limit)
+           const result = await issuesCollection.find(query).sort({priority:1}).skip(skip).limit(size).toArray();
           
-        }
+        
 
-        const result = await cursor.toArray();
-        res.send(result)
+        const total = await issuesCollection.countDocuments(query)
+        res.send({total, result})
     })
 
 
@@ -195,7 +196,9 @@ const verifyAdmin = async (req, res, next) => {
 
      const id = req.params.id
      const userEmail = req.body.email
-     const query = {_id: new ObjectId(id)}
+     const query = {_id: new ObjectId(id),
+      likedBy: {$ne: userEmail}
+     }
     
 
      const updateCount = {
@@ -722,6 +725,7 @@ app.post('/create-checkout-session', async (req, res) => {
         
     })
 
+
     app.get('/payments', verifyFBToken, verifyAdmin, async(req,res)=>{
 
       const query = {}
@@ -730,7 +734,7 @@ app.post('/create-checkout-session', async (req, res) => {
       const total = req.query.total
      
 
-      let sortOption = {};
+      let sortOption = {paidAt: -1};
       if(sortOrder === "high"){
         sortOption = { amount: -1}
       }
@@ -738,7 +742,13 @@ app.post('/create-checkout-session', async (req, res) => {
         sortOption = {amount:1}
       }
 
-      if(total){
+
+      const result = await paymentsCollection
+            .find(query)
+            .sort(sortOption)
+            .toArray();
+
+      if(total === "true"){
 
         const stats = await paymentsCollection.aggregate(
           [
@@ -750,15 +760,9 @@ app.post('/create-checkout-session', async (req, res) => {
           ]
         ).toArray();
         const totalValue = stats[0].totalAmount
-        return res.send({totalAmount: totalValue})
+        return res.send({totalAmount: totalValue, result:result})
       }
 
-
-
-      const result = await paymentsCollection
-            .find(query)
-            .sort(sortOption)
-            .toArray();
 
       res.send(result)
 
